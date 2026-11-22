@@ -1,0 +1,38 @@
+variable "virtual_machine_config" {
+  description = "Configuration for the Windows virtual machine"
+  type = object({
+    vm_os                           = string
+    vm_name                         = string
+    vm_size                         = string
+    admin_username                  = string
+    admin_password                  = optional(string,null)
+    location                        = string
+    resource_group_name             = string
+    subnet_id                       = string
+    nic_name                        = string
+    disable_password_authentication = optional(bool, false)
+    authentication_method           = optional(string, "password")
+    priority        = optional(string, "Regular")
+    eviction_policy = optional(string)
+    max_bid_price   = optional(number)
+    public_key                      = optional(string)
+    public_ip_enabled               = optional(bool, false)
+    nsg_name                        = string
+    nsg_rules = map(object({
+      name                   = string
+      priority               = number
+      direction              = string
+      access                 = string
+      protocol               = string
+      destination_port_range = optional(string, null)
+    }))
+  })
+
+  validation {
+    condition = contains(
+      ["password", "ssh_key"],
+      lower(var.virtual_machine_config.authentication_method)
+    )
+    error_message = "Authentication method must be either password or ssh_key."
+  }
+}
