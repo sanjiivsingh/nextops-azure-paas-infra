@@ -1,8 +1,8 @@
 # NextOps Azure PaaS Landing Zone (`infra-nextops`)
 
-Terraform Infrastructure-as-Code (IaC) and operational deployment scripts for the **NextOps Industrial** telemetry and digital-twin platform on Microsoft Azure.
+Enterprise-grade Terraform Infrastructure-as-Code (IaC) and operational deployment automation for the **NextOps Industrial** telemetry and digital-twin platform on Microsoft Azure.
 
-This repository provisions a hub-and-spoke Azure landing zone hosting a Node.js/React SPA dashboard (`nextops-dashboard`), a VNet-integrated Python FastAPI backend (`nextops-be`), a private Azure Database for PostgreSQL Flexible Server (`nextops-dev-psql-db` / `nextops-prod-psql-db`), Private DNS integration, and an Ubuntu Linux jumpbox VM.
+This landing zone provisions a modular, security-hardened **hub-and-spoke Azure PaaS architecture** hosting a React/Node.js SPA dashboard (`nextops-dashboard`), a VNet-integrated Python FastAPI backend (`nextops-be`), a private Azure Database for PostgreSQL Flexible Server (`nextops-dev-psql-db` / `nextops-prod-psql-db`), Private DNS integration, and an Ubuntu Linux bastion/jumpbox VM.
 
 ---
 
@@ -26,25 +26,35 @@ flowchart LR
 
 ---
 
+## Key Design Decisions & Security Controls
+
+- **Hub-and-Spoke Network Segmentation**: Separates shared connectivity (`vnet-nextops-<env>-hub01`, `10.125.0.0/16`) from workload subnets (`vnet-nextops-<env>-spk01`, `10.126.0.0/16`) with bidirectional VNet peering and dedicated `/24` subnets for frontend, backend, database, and management tiers.
+- **Zero Public Exposure for Data Tier**: PostgreSQL Flexible Server (`v16`) is deployed with `public_network_access_enabled = false`, delegated to `subnet-nextops-<env>-pg01`, and resolved internally via an Azure Private DNS Zone (`nextops-psqlflexibleserver.postgres.database.azure.com`).
+- **VNet-Integrated Backend Routing**: The FastAPI App Service (`nextops-be`) integrates with `subnet-nextops-<env>-be01` (`Microsoft.Web/serverFarms` delegation) with `vnet_route_all_enabled = true`, ensuring all database queries traverse private VNet space over TLS.
+- **Zero-Secret Repository**: All VM and database credentials are fetched dynamically at plan/apply time from an external Azure Key Vault (`onepskv` in `rg-oneps-keyvault`), and `.gitignore` excludes all `*.tfstate` and `.terraform/` artifacts.
+- **Environment Parity (`dev` & `prod`)**: Both `dev` and `prod` environments share an identical modular PaaS topology, naming convention, and CIDR layout, with `prod` dynamically deriving `API_BASE_URL` from its configured backend Web App.
+
+---
+
 ## Repository Structure
 
 ```text
 infra-nextops/
-├── .gitignore                          # Ignores *.tfstate, .terraform/, crash logs, OS files
+├── .gitignore                          # Excludes *.tfstate, .terraform/, crash logs, and OS files
 ├── docs/
 │   └── nextops-landing-zone-paas.png   # Reference PaaS landing zone architecture diagram
 ├── environments/
-│   ├── dev/                            # Active dev environment (centralindia, rg-nextops-dev-01)
+│   ├── dev/                            # Dev environment (centralindia, rg-nextops-dev-01)
 │   │   ├── README.md
-│   │   ├── backend.tf                  # Remote azurerm backend intentionally commented out (local state)
-│   │   ├── data.tf                     # External Key Vault secret lookups & caller IP lookup
+│   │   ├── backend.tf                  # Remote azurerm backend template (local state active)
+│   │   ├── data.tf                     # Key Vault secret lookups & caller IP data source
 │   │   ├── local.tf                    # Naming, CIDR calculation, Web App app_settings assembly
 │   │   ├── main.tf                     # Root module orchestration
 │   │   ├── outputs.tf                  # DB FQDN, jumpbox IP, Web App URLs, RG names
 │   │   ├── provider.tf                 # hashicorp/azurerm ~> 5.0 & hashicorp/http
 │   │   ├── terraform.tfvars            # Dev environment configuration
 │   │   └── variables.tf
-│   └── prod/                           # Production environment (parity with dev PaaS topology)
+│   └── prod/                           # Production environment (full parity with dev PaaS topology)
 │       ├── README.md
 │       └── ...
 ├── modules/
@@ -54,7 +64,7 @@ infra-nextops/
 │   ├── private dns zone /              # Private DNS zone + VNet link for PostgreSQL
 │   ├── database for postgreSQL /       # Private PostgreSQL Flexible Server v16 + conditional firewall rules
 │   └── webapp/                         # Linux App Service Plan + Linux Web App (Node / Python)
-├── nextops-db-init.sh                  # Creates DB & seeds public.telemetry (run from inside VNet)
+├── nextops-db-init.sh                  # Initializes PostgreSQL schema & seeds telemetry data
 ├── nextops-deploy-backend.sh           # Deploys nextops-backend.zip to App Service (nextops-be)
 ├── nextops-deploy-frontend.sh          # Deploys nextops-dashboard-build.zip to App Service (nextops-dashboard)
 ├── nextops-backend.zip                 # Prebuilt FastAPI backend package
@@ -76,7 +86,7 @@ Both frontend and backend run on **Azure App Service for Linux** via [`modules/w
 | **OS / SKU** | `Linux` / `B1` | `Linux` / `B1` |
 | **App Type & Runtime** | `node` (`24-lts`) | `python` (`3.12`) |
 | **Public Network Access** | `true` | `true` |
-| **VNet Integration (`delegated_subnet_key`)** | `null` (not VNet-integrated) | `backend-subnet` (`subnet-nextops-<env>-be01`, `vnet_route_all_enabled = true`) |
+| **VNet Integration (`delegated_subnet_key`)** | `null` (public ingress) | `backend-subnet` (`subnet-nextops-<env>-be01`, `vnet_route_all_enabled = true`) |
 | **Startup Command (`app_command_line`)** | `pm2 serve /home/site/wwwroot --no-daemon --spa` | `python -m uvicorn main:app --host 0.0.0.0 --port 8000` |
 
 ### Environment Variables (`app_settings`)
@@ -85,15 +95,15 @@ Both frontend and backend run on **Azure App Service for Linux** via [`modules/w
 
 | Stack / Tier | Variable | Value / Source | Purpose |
 | :--- | :--- | :--- | :--- |
-| **Node (default)** | `SCM_DO_BUILD_DURING_DEPLOYMENT` | `"false"` | Serves prebuilt SPA bundle (`nextops-dashboard-build.zip`) without running Oryx build on deploy |
+| **Node (default)** | `SCM_DO_BUILD_DURING_DEPLOYMENT` | `"false"` | Serves prebuilt SPA bundle (`nextops-dashboard-build.zip`) directly without Oryx rebuild |
 | **Node (env)** | `API_BASE_URL` | `https://<backend-webapp>.azurewebsites.net` | Target backend API base URL for the dashboard |
 | **Node (env)** | `ENVIRONMENT` | `var.environment` (`dev` / `prod`) | Runtime environment identifier |
 | **Python (default)** | `SCM_DO_BUILD_DURING_DEPLOYMENT` | `"true"` | Triggers Oryx `pip install` on zip deployment for `nextops-backend.zip` |
 | **Python (default)** | `PORT` | `"8000"` | Aligns App Service container port with Uvicorn `--port 8000` |
 | **Python (env)** | `ENVIRONMENT` | `var.environment` (`dev` / `prod`) | Overrides default `"development"` with active environment |
-| **Python (env)** | `DATABASE_URL` | `postgresql://<db_user>:<urlencoded_db_password>@<psql_fqdn>:5432/<database_name>` | Connection string resolved via Private DNS over VNet integration |
+| **Python (env)** | `DATABASE_URL` | `postgresql://<db_user>:<urlencoded_db_password>@<psql_fqdn>:5432/<database_name>` | Private PostgreSQL connection string resolved via Private DNS over VNet integration |
 
-> **Note:** `DATABASE_URL` URL-encodes the database password (`urlencode(...)`) in `local.tf` so special characters in Key Vault secrets do not break PostgreSQL URI parsing.
+> `DATABASE_URL` URL-encodes the database password (`urlencode(...)`) in `local.tf` so special characters in Key Vault secrets do not break PostgreSQL URI parsing.
 
 ---
 
@@ -101,15 +111,15 @@ Both frontend and backend run on **Azure App Service for Linux** via [`modules/w
 
 1. **CLI Tools**:
    - Terraform (`>= 1.5`, provider `hashicorp/azurerm ~> 5.0`)
-   - Azure CLI (`az`), authenticated via `az login` with access to target subscription
+   - Azure CLI (`az`), authenticated via `az login` with access to the target subscription
    - `psql` (`libpq`) on the jumpbox VM for database initialization
 2. **Pre-Existing Azure Key Vault**:
-   Terraform reads secrets at plan/apply time from an external Key Vault configured in `key_vault_details`:
+   Terraform reads secrets at plan/apply time from the Key Vault defined in `key_vault_details`:
    - **Key Vault**: `onepskv` in resource group `rg-oneps-keyvault`
    - **Required Secrets**:
      - `vm-username` — Jumpbox Linux VM admin username
-     - `vm-password` — Jumpbox Linux VM admin password (used when `authentication_method = "password"`)
-     - `linux-vm-ssh-public-key` — Jumpbox SSH public key (used when `authentication_method = "ssh_key"`)
+     - `vm-password` — Jumpbox Linux VM admin password (when `authentication_method = "password"`)
+     - `linux-vm-ssh-public-key` — Jumpbox SSH public key (when `authentication_method = "ssh_key"`)
      - `db-username` — PostgreSQL Flexible Server administrator username
      - `db-password` — PostgreSQL Flexible Server administrator password
 
@@ -130,7 +140,7 @@ Capture the outputs (`postgreSQL_fqdn`, `vm_public_ip`, `webapp`, `resource_grou
 
 ### 2. Initialize PostgreSQL Schema & Seed Data
 
-Because `public_network_access_enabled = false` on the PostgreSQL Flexible Server, run `nextops-db-init.sh` **from inside the VNet** (e.g., on `vm-nextops-lin01`):
+Because PostgreSQL is isolated inside the spoke VNet (`public_network_access_enabled = false`), run `nextops-db-init.sh` from the jumpbox VM (`vm-nextops-lin01`) over SSH:
 
 ```bash
 # Copy script to jumpbox
@@ -156,14 +166,11 @@ From the `infra-nextops/` root directory (authenticated with `az login`):
 ./nextops-deploy-frontend.sh
 ```
 
-> Both scripts use `az webapp deploy --type zip` against the production slot while leaving Terraform-managed `app_settings`, runtime versions, and startup commands intact.
+Both scripts use `az webapp deploy --type zip` against the production slot while preserving Terraform-managed `app_settings`, runtime versions, and startup commands.
 
 ---
 
-## Operational Notes & Known Gotchas
+## Author & Architecture Credit
 
-- **Local State by Design**: `environments/dev/backend.tf` and `environments/prod/backend.tf` intentionally leave the `azurerm` remote backend commented out. `.gitignore` excludes `*.tfstate` and `*.tfstate.*` so local state files are never committed to Git. Enable the `azurerm` backend block before team/CI-CD usage.
-- **Private Database Access**: `nextops-dev-psql-db` has public network access disabled (`public_network_access_enabled = false`). Direct `psql` connections from a developer laptop will fail unless connected through the spoke VNet (e.g., via `vm-nextops-lin01`) where `nextops-psqlflexibleserver.postgres.database.azure.com` resolves via Private DNS.
-- **VNet Integration & DNS**: Only `backend_webapp` (`nextops-be`) is VNet-integrated (`delegated_subnet_key = "backend-subnet"`, `vnet_route_all_enabled = true`). This ensures outbound DB traffic routes through the spoke VNet and resolves the Private DNS zone.
-- **Module Folder Names**: Two legacy module directories (`modules/database for postgreSQL ` and `modules/private dns zone `) contain a trailing space in their directory names. Keep the exact `source` paths in `main.tf` unless renaming them across all environments.
-- **Key Vault & Data Sources**: `data.http.my_ip` calls `https://api.ipify.org` during `terraform plan/apply`. Outbound internet access from the machine running Terraform is required even when `login_thru_this_pc = "no"`.
+- **Infrastructure Design & Landing Zone Architecture**: **Sanjeev Singh** ([GitHub](https://github.com/sanjiivsingh))
+- **Scope**: End-to-end Azure PaaS landing zone architecture, hub-and-spoke network topology, reusable Terraform child modules, private PostgreSQL + Private DNS integration, App Service runtime/VNet configuration, and deployment automation.
