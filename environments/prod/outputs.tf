@@ -13,3 +13,20 @@ output "vm_public_ip" {
     }
   }
 }
+
+output "webapp" {
+  value = {
+    for k, v in var.webapp_config :
+    "${k}_url" => {
+      webapp_local_hostname = module.webapp[k].webapp_url
+    }
+  }
+}
+
+output "resource_group_output" {
+  value = {
+    for k, v in var.resource_groups : k => {
+      resource_group_name = module.resource_group.resource_group_output[k].name
+    }
+  }
+}

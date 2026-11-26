@@ -25,7 +25,13 @@ module "private_dns_zone" {
 }
 
 module "postgresql_flexible_server" {
-  source = "../../modules/database for postgreSQL "
-  for_each = local.postgresql_flexible_server_config
+  source                            = "../../modules/database for postgreSQL "
+  for_each                          = local.postgresql_flexible_server_config
   postgresql_flexible_server_config = each.value
+}
+
+module "webapp" {
+  source        = "../../modules/webapp"
+  for_each      = local.webapp_config
+  webapp_config = each.value
 }

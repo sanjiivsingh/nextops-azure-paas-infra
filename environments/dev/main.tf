@@ -13,19 +13,25 @@ module "hubspokenetwork" {
 }
 
 module "virtual_machines" {
-  source                         = "../../modules/virtual machine"
-  for_each                       = local.virtual_machine_config
+  source                 = "../../modules/virtual machine"
+  for_each               = local.virtual_machine_config
   virtual_machine_config = each.value
 }
 
 module "private_dns_zone" {
-  for_each = local.private_dns_zone_config
-  source = "../../modules/private dns zone "
+  for_each                = local.private_dns_zone_config
+  source                  = "../../modules/private dns zone "
   private_dns_zone_config = each.value
 }
 
 module "postgresql_flexible_server" {
-  source = "../../modules/database for postgreSQL "
-  for_each = local.postgresql_flexible_server_config
+  source                            = "../../modules/database for postgreSQL "
+  for_each                          = local.postgresql_flexible_server_config
   postgresql_flexible_server_config = each.value
+}
+
+module "webapp" {
+  source        = "../../modules/webapp"
+  for_each      = local.webapp_config
+  webapp_config = each.value
 }

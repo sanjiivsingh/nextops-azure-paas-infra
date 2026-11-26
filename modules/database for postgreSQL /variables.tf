@@ -9,6 +9,7 @@ variable "postgresql_flexible_server_config" {
     public_network_access_enabled = optional(bool, false)
     administrator_login           = string
     administrator_password        = string
+    login_thru_this_pc            = optional(string, "yes")
     start_ip_address              = optional(string)
     end_ip_address                = optional(string)
   })

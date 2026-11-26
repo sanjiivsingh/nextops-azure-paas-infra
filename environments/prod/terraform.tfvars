@@ -1,6 +1,7 @@
-project = "nextops"
-environment = "dev"
-location = "centralindia"
+project       = "nextops"
+environment   = "prod"
+location      = "centralindia"
+database_name = "nextops"
 
 tags = {
   owner     = "infra team"
@@ -29,23 +30,34 @@ virtual_network_config = {
 }
 
 subnet_config = {
-  "frontend-subnet" = {
-    name_suffix      = "fe01"
+  "vm-subnet" = {
+    name_suffix      = "vm01"
     rg_key           = "rg1"
     vnet_key         = "spokevnet1"
     dedicated_subnet = false
-    subnet_num       = 01
+    subnet_num       = 04
     subnet_prefix    = 24
+  }
+  "frontend-subnet" = {
+    name_suffix        = "fe01"
+    rg_key             = "rg1"
+    vnet_key           = "spokevnet1"
+    dedicated_subnet   = false
+    subnet_num         = 01
+    subnet_prefix      = 24
+    delegation_enabled = false
+    delegation_service = "Microsoft.Web/serverFarms"
   }
   "backend-subnet" = {
-    name_suffix      = "be01"
-    rg_key           = "rg1"
-    vnet_key         = "spokevnet1"
-    dedicated_subnet = false
-    subnet_num       = 02
-    subnet_prefix    = 24
+    name_suffix        = "be01"
+    rg_key             = "rg1"
+    vnet_key           = "spokevnet1"
+    dedicated_subnet   = false
+    subnet_num         = 02
+    subnet_prefix      = 24
+    delegation_enabled = true
+    delegation_service = "Microsoft.Web/serverFarms"
   }
-
   "database-subnet" = {
     name_suffix        = "pg01"
     rg_key             = "rg1"
@@ -56,18 +68,16 @@ subnet_config = {
     delegation_enabled = true
     delegation_service = "Microsoft.DBforPostgreSQL/flexibleServers"
   }
-
 }
 
-
-# Virtual Machine Configuration
+# Virtual Machine Configuration (Jumpbox)
 virtual_machines_config = {
   "linux_vm_01" = {
     vm_os             = "Linux"
     vm_name_suffix    = "lin01"
     vm_size           = "Standard_D2s_v5"
     rg_key            = "rg1"
-    subnet_key        = "frontend-subnet"
+    subnet_key        = "vm-subnet"
     public_ip_enabled = true
     # Choose authentication method between "password" and "ssh_key" for a linux vm
     authentication_method = "password"
@@ -79,43 +89,6 @@ virtual_machines_config = {
         access                 = "Allow"
         protocol               = "Tcp"
         destination_port_range = "22"
-      }
-      "http" = {
-        name                   = "http"
-        priority               = 310
-        direction              = "Inbound"
-        access                 = "Allow"
-        protocol               = "*"
-        destination_port_range = "80"
-      }
-    }
-  }
-
-  "linux_vm_02" = {
-    vm_os             = "Linux"
-    vm_name_suffix    = "lin02"
-    vm_size           = "Standard_D2s_v5"
-    rg_key            = "rg1"
-    subnet_key        = "backend-subnet"
-    public_ip_enabled = false
-    # Choose authentication method between "password" and "ssh_key" for a linux vm
-    authentication_method = "password"
-    nsg_rules = {
-      "ssh" = {
-        name                   = "SSH"
-        priority               = 300
-        direction              = "Inbound"
-        access                 = "Allow"
-        protocol               = "Tcp"
-        destination_port_range = "22"
-      }
-      "backend" = {
-        name                   = "backend"
-        priority               = 310
-        direction              = "Inbound"
-        access                 = "Allow"
-        protocol               = "Tcp"
-        destination_port_range = "8000"
       }
     }
   }
@@ -147,6 +120,32 @@ postgresql_flexible_server = {
     subnet_key                    = "database-subnet"
     private_dns_zone_key          = "pvt_dns_zone_1"
     public_network_access_enabled = false
-    login_thru_this_pc            = "No"
+    login_thru_this_pc            = "no"
+  }
+}
+
+webapp_config = {
+  frontend-webapp = {
+    asp_name              = "asp-linux-webapp-frontend-prod"
+    os_type               = "Linux"
+    sku_name              = "B1"
+    name                  = "nextops-dashboard-prod"
+    public_network_access = true
+    rg_key                = "rg1"
+    app_type              = "node"
+    runtime_version       = "24-lts"
+    startup_command       = "pm2 serve /home/site/wwwroot --no-daemon --spa"
+  }
+  backend_webapp = {
+    asp_name              = "asp-linux-webapp-backend-prod"
+    os_type               = "linux"
+    sku_name              = "B1"
+    name                  = "nextops-be-prod"
+    public_network_access = true
+    delegated_subnet_key  = "backend-subnet"
+    rg_key                = "rg1"
+    app_type              = "python"
+    runtime_version       = "3.12"
+    startup_command       = "python -m uvicorn main:app --host 0.0.0.0 --port 8000"
   }
 }

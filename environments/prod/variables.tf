@@ -104,3 +104,23 @@ variable "postgresql_flexible_server" {
     login_thru_this_pc            = optional(string, "yes")
   }))
 }
+
+variable "webapp_config" {
+  type = map(object({
+    asp_name              = string
+    os_type               = string
+    sku_name              = string
+    name                  = string
+    rg_key                = string
+    app_type              = string
+    runtime_version       = string
+    public_network_access = optional(bool, true)
+    delegated_subnet_key  = optional(string, null)
+    startup_command       = optional(string, "")
+  }))
+}
+
+variable "database_name" {
+  type        = string
+  description = "Name of the PostgreSQL application database"
+}

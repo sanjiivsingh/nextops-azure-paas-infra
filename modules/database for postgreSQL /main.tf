@@ -20,9 +20,24 @@ resource "azurerm_postgresql_flexible_server" "this" {
 
 }
 resource "azurerm_postgresql_flexible_server_firewall_rule" "this" {
-  count            = var.postgresql_flexible_server_config.public_network_access_enabled ? 1 : 0
-  name             = "allow-my-pc"
+
+  for_each = (
+    var.postgresql_flexible_server_config.public_network_access_enabled &&
+    lower(var.postgresql_flexible_server_config.login_thru_this_pc) == "yes"
+  ) ? {
+    allow-my-pc = {
+      start_ip = var.postgresql_flexible_server_config.start_ip_address
+      end_ip   = var.postgresql_flexible_server_config.end_ip_address
+    }
+
+    allow-azure-services = {
+      start_ip = "0.0.0.0"
+      end_ip   = "0.0.0.0"
+    }
+  } : {}
+
+  name             = each.key
   server_id        = azurerm_postgresql_flexible_server.this.id
-  start_ip_address = var.postgresql_flexible_server_config.start_ip_address
-  end_ip_address   = var.postgresql_flexible_server_config.end_ip_address
+  start_ip_address = each.value.start_ip
+  end_ip_address   = each.value.end_ip
 }

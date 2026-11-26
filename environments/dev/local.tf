@@ -108,10 +108,47 @@ locals {
       public_network_access_enabled = value.public_network_access_enabled
       administrator_login           = data.azurerm_key_vault_secret.db_username.value
       administrator_password        = data.azurerm_key_vault_secret.db_password.value
-      start_ip_address              = lower(value.login_thru_this_pc) == "yes" ? chomp(data.http.my_ip.response_body): "0.0.0.0"
-      end_ip_address                = lower(value.login_thru_this_pc) == "yes" ? chomp(data.http.my_ip.response_body): "0.0.0.0"
+      login_thru_this_pc            = value.login_thru_this_pc
+      start_ip_address              = lower(value.login_thru_this_pc) == "yes" ? chomp(data.http.my_ip.response_body) : "0.0.0.0"
+      end_ip_address                = lower(value.login_thru_this_pc) == "yes" ? chomp(data.http.my_ip.response_body) : "0.0.0.0"
     }
   }
 
+
+
+  webapp_config = {
+    for k, v in var.webapp_config :
+    k => {
+      asp_name                  = v.asp_name
+      os_type                   = title(v.os_type)
+      sku_name                  = v.sku_name
+      resource_group_name       = module.resource_group.resource_group_output[v.rg_key].name
+      location                  = module.resource_group.resource_group_output[v.rg_key].location
+      name                      = v.name
+      public_network_access     = v.public_network_access
+      app_type                  = v.app_type
+      virtual_network_subnet_id = v.delegated_subnet_key != null ? module.hubspokenetwork.subnet_output[v.delegated_subnet_key].id : null
+      runtime_version           = v.runtime_version
+      startup_command           = v.startup_command
+
+      app_settings = v.app_type == "node" ? {
+        "API_BASE_URL" = "https://nextops-be.azurewebsites.net"
+        "ENVIRONMENT"  = var.environment
+        } : {
+        "ENVIRONMENT" = var.environment
+        "DATABASE_URL" = format(
+          "postgresql://%s:%s@%s:5432/%s",
+          data.azurerm_key_vault_secret.db_username.value,
+          urlencode(data.azurerm_key_vault_secret.db_password.value),
+          module.postgresql_flexible_server["psql-server"].psql_output.fqdn,
+          var.database_name
+        )
+      }
+    }
+  }
+
+
 }
+
+
 
